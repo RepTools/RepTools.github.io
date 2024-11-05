@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Thread Stripping Calculator</title>
+  <!-- Include Tailwind CSS from CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Include React and ReactDOM from CDN -->
+  <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+  <!-- Include Babel for JSX transpilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    /* Custom styles for the slider marker */
+    .slider-container {
+      position: relative;
+      width: 100%;
+    }
+    .slider-marker {
+      position: absolute;
+      top: -5px;
+      width: 2px;
+      height: 20px;
+      background-color: red;
+    }
+    .slider-label {
+      position: absolute;
+      top: 15px;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- Our React code -->
+  <script type="text/babel">
+    const BOLT_SPECS = {
+      'M3': { pitch: 0.5, minorDia: 2.387, stressArea: 5.03, proofLoad: 3.02 },
+      'M4': { pitch: 0.7, minorDia: 3.242, stressArea: 8.78, proofLoad: 5.27 },
+      'M5': { pitch: 0.8, minorDia: 4.134, stressArea: 14.2, proofLoad: 8.52 },
+      'M6': { pitch: 1.0, minorDia: 4.917, stressArea: 20.1, proofLoad: 12.1 },
+      'M8': { pitch: 1.25, minorDia: 6.647, stressArea: 36.6, proofLoad: 22.0 },
+      'M10': { pitch: 1.5, minorDia: 8.376, stressArea: 58.0, proofLoad: 34.8 },
+      'M12': { pitch: 1.75, minorDia: 10.106, stressArea: 84.3, proofLoad: 50.6 },
+      'M14': { pitch: 2.0, minorDia: 11.835, stressArea: 115.0, proofLoad: 69.0 },
+      'M16': { pitch: 2.0, minorDia: 13.835, stressArea: 157.0, proofLoad: 94.2 },
+      'M20': { pitch: 2.5, minorDia: 17.294, stressArea: 245.0, proofLoad: 147.0 }
+    };
+
+    const MATERIAL_PROPERTIES = {
+      'Steel 8.8': { shearStrength: 384, tensileStrength: 800 },  // 60% of tensile
+      'Aluminum 6061': { shearStrength: 170, tensileStrength: 310 },
+      'Brass': { shearStrength: 250, tensileStrength: 400 },
+      'Steel 4.8': { shearStrength: 240, tensileStrength: 400 },
+      'Steel 12.9': { shearStrength: 612, tensileStrength: 1220 }
+    };
+
+    function ThreadCalculator() {
+      const [selectedBolt, setSelectedBolt] = React.useState('M10');
+      const [engagementLength, setEngagementLength] = React.useState(10);
+      const [boltMaterial, setBoltMaterial] = React.useState('Steel 8.8');
+      const [holeMaterial, setHoleMaterial] = React.useState('Aluminum 6061');
+
+      const calculateThreadStripping = (boltSize, length) => {
+        const spec = BOLT_SPECS[boltSize];
+        const majorDia = parseInt(boltSize.slice(1));
+        const pitch = spec.pitch;
+        const minorDia = spec.minorDia;
+
+        // Calculations
+        const h_engaged = 0.75 * pitch; // h_engaged = 0.75p
+        const A_s = Math.PI * majorDia * length * h_engaged; // External thread area
+        const A_i = Math.PI * minorDia * length * h_engaged; // Internal thread area
+
+        const tensileArea = spec.stressArea;
+        const τ_bolt = MATERIAL_PROPERTIES[boltMaterial].shearStrength;
+        const τ_hole = MATERIAL_PROPERTIES[holeMaterial].shearStrength;
+        const σ_bolt = MATERIAL_PROPERTIES[boltMaterial].tensileStrength;
+
+        // Calculate forces
+        const boltThreadStrength = A_s * τ_bolt;
+        const holeThreadStrength = A_i * τ_hole;
+        const boltBreakingForce = tensileArea * σ_bolt * 1000; // Convert MPa × mm² to N
+
+        return {
+          boltThreadStrength: boltThreadStrength / 1000, // Convert to kN
+          holeThreadStrength: holeThreadStrength / 1000,
+          boltBreakingForce: boltBreakingForce / 1000,
+          weakestLink: Math.min(boltThreadStrength, holeThreadStrength, boltBreakingForce) / 1000,
+          // Additional calculations for display
+          h_engaged,
+          A_s,
+          A_i,
+          τ_bolt,
+          τ_hole,
+          σ_bolt,
+          majorDia,
+          minorDia,
+          tensileArea
+        };
+      };
+
+      // Function to calculate the critical engagement length
+      const calculateCriticalLength = () => {
+        const spec = BOLT_SPECS[selectedBolt];
+        const majorDia = parseInt(selectedBolt.slice(1));
+        const pitch = spec.pitch;
+        const minorDia = spec.minorDia;
+        const tensileArea = spec.stressArea;
+
+        const τ_hole = MATERIAL_PROPERTIES[holeMaterial].shearStrength;
+        const σ_bolt = MATERIAL_PROPERTIES[boltMaterial].tensileStrength;
+
+        const h_engaged = 0.75 * pitch;
+
+        // Calculate the length at which bolt tensile failure equals hole thread stripping
+        // L_e,min = (A_t × σ_bolt) / (π × d × h_engaged × τ_hole)
+        const lengthAtEqualStrength = (tensileArea * σ_bolt * 1000) / (Math.PI * minorDia * h_engaged * τ_hole);
+
+        // Clamp the value between min and max slider values
+        return Math.max(1, Math.min(lengthAtEqualStrength / 1000, 30));
+      };
+
+      const criticalLength = calculateCriticalLength();
+
+      const results = calculateThreadStripping(selectedBolt, engagementLength);
+      const weakestMode = 
+        results.weakestLink === results.boltThreadStrength ? "Bolt Thread Stripping" :
+        results.weakestLink === results.holeThreadStrength ? "Hole Thread Stripping" :
+        "Bolt Tensile Failure";
+
+      return (
+        <div className="w-full max-w-4xl mx-auto p-4 space-y-6 bg-gray-50">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Left Column: Controls */}
+            <div className="p-4 bg-white rounded-lg shadow">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Bolt Size</label>
+                  <div className="relative">
+                    <select 
+                      value={selectedBolt}
+                      onChange={(e) => setSelectedBolt(e.target.value)}
+                      className="w-full p-2 border rounded"
+                    >
+                      {Object.keys(BOLT_SPECS).map(size => (
+                        <option key={size} value={size}>{size}</option>
+                      ))}
+                    </select>
+                    {/* Dropdown Icon */}
+                    <svg className="absolute right-2 top-3 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Thread Engagement Length: {engagementLength}mm
+                  </label>
+                  <div className="slider-container">
+                    <input
+                      type="range"
+                      min="1"
+                      max="30"
+                      value={engagementLength}
+                      onChange={(e) => setEngagementLength(parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                    {/* Critical Length Marker */}
+                    <div
+                      className="slider-marker"
+                      style={{ left: `${((criticalLength - 1) / 29) * 100}%` }}
+                    ></div>
+                    <div
+                      className="slider-label"
+                      style={{ left: `${((criticalLength - 1) / 29) * 100}%` }}
+                    >
+                      Critical Length ({criticalLength.toFixed(1)} mm)
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Bolt Material</label>
+                  <div className="relative">
+                    <select 
+                      value={boltMaterial}
+                      onChange={(e) => setBoltMaterial(e.target.value)}
+                      className="w-full p-2 border rounded"
+                    >
+                      {Object.keys(MATERIAL_PROPERTIES).map(material => (
+                        <option key={material} value={material}>{material}</option>
+                      ))}
+                    </select>
+                    {/* Dropdown Icon */}
+                    <svg className="absolute right-2 top-3 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Hole Material</label>
+                  <div className="relative">
+                    <select 
+                      value={holeMaterial}
+                      onChange={(e) => setHoleMaterial(e.target.value)}
+                      className="w-full p-2 border rounded"
+                    >
+                      {Object.keys(MATERIAL_PROPERTIES).map(material => (
+                        <option key={material} value={material}>{material}</option>
+                      ))}
+                    </select>
+                    {/* Dropdown Icon */}
+                    <svg className="absolute right-2 top-3 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+                
+                {/* Thread Visualization */}
+                <div className="h-40 bg-gray-50 rounded-lg p-2 flex items-center justify-center">
+                  <svg
+                    viewBox="0 0 100 160"
+                    className="h-full"
+                    style={{
+                      transform: `scale(${Math.sqrt(parseInt(selectedBolt.slice(1)) / 20)})`,
+                      transition: 'transform 0.3s ease'
+                    }}
+                  >
+                    {/* Bolt Head */}
+                    <rect x="35" y="10" width="30" height="15" fill="#2d3748"/>
+                    
+                    {/* Top Plate with Thread Visualization */}
+                    <rect x="20" y="35" width="60" height={engagementLength * 1.5} fill="#a0aec0"/>
+                    
+                    {/* Thread Lines */}
+                    {[...Array(Math.floor(engagementLength/2))].map((_, i) => (
+                      <g key={i}>
+                        <line 
+                          x1="47" 
+                          y1={40 + i * 6} 
+                          x2="53" 
+                          y2={40 + i * 6} 
+                          stroke="#4a5568" 
+                          strokeWidth="0.5"
+                        />
+                        <line 
+                          x1="45" 
+                          y1={43 + i * 6} 
+                          x2="55" 
+                          y2={43 + i * 6} 
+                          stroke="#2d3748" 
+                          strokeWidth="0.5"
+                        />
+                      </g>
+                    ))}
+                    
+                    {/* Bolt Shaft */}
+                    <rect x="47" y="25" width="6" height="85" fill="#4a5568"/>
+                    
+                    {/* Size Label */}
+                    <text
+                      x="85"
+                      y="80"
+                      textAnchor="start"
+                      fill="#4a5568"
+                      fontSize="14"
+                      fontWeight="500"
+                    >
+                      {selectedBolt}
+                    </text>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Results */}
+            <div className="p-4 bg-white rounded-lg shadow">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                {/* Bar Chart Icon */}
+                <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3v18h18"/>
+                </svg>
+                Analysis Results
+              </h3>
+              <div className="space-y-6">
+                {/* Basic Specs */}
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600">Thread Pitch</label>
+                    <div className="text-lg font-semibold">{BOLT_SPECS[selectedBolt].pitch} mm</div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600">Minor Diameter</label>
+                    <div className="text-lg font-semibold">{BOLT_SPECS[selectedBolt].minorDia} mm</div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600">Stress Area</label>
+                    <div className="text-lg font-semibold">{BOLT_SPECS[selectedBolt].stressArea} mm²</div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600">Engagement Length</label>
+                    <div className="text-lg font-semibold">{engagementLength} mm</div>
+                  </div>
+                </div>
+
+                {/* Failure Modes */}
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <h4 className="font-medium mb-3 flex items-center">
+                    {/* Alert Icon */}
+                    <svg className="w-5 h-5 mr-2 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M4.93 19h14.14l-7.07-12.12L4.93 19z"/>
+                    </svg>
+                    Failure Mode Analysis
+                  </h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600">Bolt Thread Stripping Strength</label>
+                      <div className="text-xl font-bold text-blue-700">{results.boltThreadStrength.toFixed(1)} kN</div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600">Hole Thread Stripping Strength</label>
+                      <div className="text-xl font-bold text-blue-700">{results.holeThreadStrength.toFixed(1)} kN</div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600">Bolt Breaking Strength</label>
+                      <div className="text-xl font-bold text-blue-700">{results.boltBreakingForce.toFixed(1)} kN</div>
+                    </div>
+                    <div className="pt-4 border-t">
+                      <label className="block text-sm font-medium text-gray-600">Predicted Failure Mode</label>
+                      <div className="text-xl font-bold text-red-600 flex items-center">
+                        {/* Failure Icon */}
+                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                        {weakestMode}
+                      </div>
+                      <div className="text-sm text-red-500">at {results.weakestLink.toFixed(1)} kN</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Thread Stress Analysis */}
+          <div className="p-4 bg-white rounded-lg shadow">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              {/* Book Icon */}
+              <svg className="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 12H8v8h8v-8h-4z"/>
+              </svg>
+              Thread Stress Analysis
+            </h3>
+            <div className="space-y-6 bg-white p-4 rounded-lg border border-gray-200">
+              {/* Thread Geometry */}
+              <div>
+                <h4 className="text-md font-medium text-gray-800 mb-3">Thread Geometry Understanding</h4>
+                {/* Basic Thread Profile */}
+                <div className="grid grid-cols-12 items-center mb-4">
+                  <div className="col-span-3">
+                    <p className="font-medium text-gray-700">Basic Thread Profile:</p>
+                  </div>
+                  <div className="col-span-9 bg-gray-50 p-3 rounded-lg space-y-2">
+                    <div className="font-mono text-lg">H = 0.866p</div>
+                    <div className="font-mono text-lg">h = 0.625p</div>
+                    <div className="text-sm text-gray-600">Where:</div>
+                    <div className="text-sm text-gray-600">H = theoretical thread height (from root to peak)</div>
+                    <div className="text-sm text-gray-600">h = actual thread height (considering truncation)</div>
+                    <div className="text-sm text-gray-600">p = thread pitch</div>
+                  </div>
+                </div>
+
+                {/* Thread Engagement */}
+                <div className="grid grid-cols-12 items-center mb-4 mt-6">
+                  <div className="col-span-3">
+                    <p className="font-medium text-gray-700">Thread Engagement:</p>
+                  </div>
+                  <div className="col-span-9 bg-gray-50 p-3 rounded-lg space-y-2">
+                    <div className="font-mono text-lg">h<sub>engaged</sub> = (7/8)H ≈ 0.75p</div>
+                    <div className="text-sm text-gray-600 mt-2">The 0.75p factor comes from:</div>
+                    <div className="text-sm text-gray-600">1. Basic thread height (H) = 0.866p</div>
+                    <div className="text-sm text-gray-600">2. Actual engagement is ~87.5% of H due to:</div>
+                    <div className="text-sm text-gray-600 pl-4">- Root and crest clearance</div>
+                    <div className="text-sm text-gray-600 pl-4">- Thread truncation</div>
+                    <div className="text-sm text-gray-600 pl-4">- Manufacturing tolerances</div>
+                    <div className="text-sm text-gray-600">3. 0.866p × 0.875 ≈ 0.75p</div>
+                  </div>
+                </div>
+
+                {/* Resulting Thread Areas */}
+                <h4 className="text-md font-medium text-gray-800 mb-3 mt-6">Resulting Thread Areas</h4>
+                <div className="grid grid-cols-12 items-start mb-4">
+                  <div className="col-span-3">
+                    <p className="font-medium text-gray-700">External (Bolt):</p>
+                  </div>
+                  <div className="col-span-9 bg-gray-50 p-3 rounded-lg space-y-2">
+                    <div className="font-mono text-lg">
+                      A<sub>s</sub> = π × D × L<sub>e</sub> × h<sub>engaged</sub>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      With values: A<sub>s</sub> = π × {results.majorDia} mm × {engagementLength} mm × {results.h_engaged.toFixed(3)} mm = {results.A_s.toFixed(2)} mm²
+                    </div>
+                  </div>
+                  <div className="col-span-12">
+                    <p className="text-sm text-gray-600 mt-1">D = major diameter, L<sub>e</sub> = engagement length, h<sub>engaged</sub> ≈ 0.75p</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-12 items-start mb-4">
+                  <div className="col-span-3">
+                    <p className="font-medium text-gray-700">Internal (Hole):</p>
+                  </div>
+                  <div className="col-span-9 bg-gray-50 p-3 rounded-lg space-y-2">
+                    <div className="font-mono text-lg">
+                      A<sub>i</sub> = π × d × L<sub>e</sub> × h<sub>engaged</sub>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      With values: A<sub>i</sub> = π × {results.minorDia.toFixed(3)} mm × {engagementLength} mm × {results.h_engaged.toFixed(3)} mm = {results.A_i.toFixed(2)} mm²
+                    </div>
+                  </div>
+                  <div className="col-span-12">
+                    <p className="text-sm text-gray-600 mt-1">d = minor diameter</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Thread Stripping Loads */}
+              <div className="border-t pt-4">
+                <h4 className="text-md font-medium text-gray-800 mb-3">Thread Stripping Loads</h4>
+                <div className="grid grid-cols-12 items-start mb-4">
+                  <div className="col-span-3">
+                    <p className="font-medium text-gray-700">External Threads:</p>
+                  </div>
+                  <div className="col-span-9 bg-gray-50 p-3 rounded-lg space-y-2">
+                    <div className="font-mono text-lg">
+                      F<sub>s,ext</sub> = A<sub>s</sub> × τ<sub>bolt</sub>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      With values: F<sub>s,ext</sub> = {results.A_s.toFixed(2)} mm² × {results.τ_bolt} MPa = {(results.A_s * results.τ_bolt / 1000).toFixed(2)} kN
+                    </div>
+                  </div>
+                  <div className="col-span-12">
+                    <p className="text-sm text-gray-600 mt-1">τ<sub>bolt</sub> = shear strength of bolt material</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-12 items-start mb-4">
+                  <div className="col-span-3">
+                    <p className="font-medium text-gray-700">Internal Threads:</p>
+                  </div>
+                  <div className="col-span-9 bg-gray-50 p-3 rounded-lg space-y-2">
+                    <div className="font-mono text-lg">
+                      F<sub>s,int</sub> = A<sub>i</sub> × τ<sub>hole</sub>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      With values: F<sub>s,int</sub> = {results.A_i.toFixed(2)} mm² × {results.τ_hole} MPa = {(results.A_i * results.τ_hole / 1000).toFixed(2)} kN
+                    </div>
+                  </div>
+                  <div className="col-span-12">
+                    <p className="text-sm text-gray-600 mt-1">τ<sub>hole</sub> = shear strength of hole material</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Minimum Engagement Length */}
+              <div className="border-t pt-4">
+                <h4 className="text-md font-medium text-gray-800 mb-3">Minimum Engagement Length</h4>
+                <div className="grid grid-cols-12 items-start">
+                  <div className="col-span-3">
+                    <p className="font-medium text-gray-700">Length for Equal Strength:</p>
+                  </div>
+                  <div className="col-span-9 bg-gray-50 p-3 rounded-lg space-y-2">
+                    <div className="font-mono text-lg">
+                      L<sub>e,min</sub> = (A<sub>t</sub> × σ<sub>bolt</sub>) / (π × d × h<sub>engaged</sub> × τ<sub>hole</sub>)
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      With values: L<sub>e,min</sub> = ({results.tensileArea} mm² × {results.σ_bolt} MPa) / (π × {results.minorDia.toFixed(3)} mm × {results.h_engaged.toFixed(3)} mm × {results.τ_hole} MPa) = {(criticalLength).toFixed(2)} mm
+                    </div>
+                  </div>
+                  <div className="col-span-12">
+                    <p className="text-sm text-gray-600 mt-1">A<sub>t</sub> = tensile stress area of bolt, σ<sub>bolt</sub> = bolt tensile strength</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Combined Analysis */}
+              <div className="border-t pt-4">
+                <h4 className="text-md font-medium text-gray-800 mb-3">Failure Mode Analysis</h4>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p>The assembly will fail at the lowest of these three loads:</p>
+                  <p>1. F<sub>bolt</sub> = A<sub>t</sub> × σ<sub>bolt</sub> = {(results.tensileArea * results.σ_bolt / 1000).toFixed(2)} kN (Bolt tensile failure)</p>
+                  <p>2. F<sub>s,ext</sub> = π × D × L<sub>e</sub> × h<sub>engaged</sub> × τ<sub>bolt</sub> = {(results.A_s * results.τ_bolt / 1000).toFixed(2)} kN (External thread stripping)</p>
+                  <p>3. F<sub>s,int</sub> = π × d × L<sub>e</sub> × h<sub>engaged</sub> × τ<sub>hole</sub> = {(results.A_i * results.τ_hole / 1000).toFixed(2)} kN (Internal thread stripping)</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes & Assumptions */}
+          <div className="p-4 bg-white rounded-lg shadow">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              {/* Info Icon */}
+              <svg className="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M12 4a8 8 0 100 16 8 8 0 000-16z"/>
+              </svg>
+              Notes &amp; Assumptions
+            </h3>
+            <div className="space-y-2 text-sm">
+              <p>• Thread shear strength is typically 60% of material tensile strength</p>
+              <p>• Calculations assume perfect thread engagement and uniform load distribution</p>
+              <p>• Safety factors should be applied based on application requirements</p>
+              <p>• For critical applications, physical testing is recommended</p>
+              <p>• Tool assumes standard metric thread profiles and fully formed threads</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<ThreadCalculator />, document.getElementById('root'));
+  </script>
+</body>
+</html>

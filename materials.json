@@ -1,0 +1,12 @@
+{
+    "Q235": {
+        "Elastic_Modulus": 2000,
+        "Yield_Strength": 250,
+        "Tensile_Strength": 450,
+        "Density": 7.85,
+        "Shear_Modulus": 79,
+        "Poisson_Ratio": 0.26,
+        "Compressive_Strength": 152,
+        "Category": "Metal"
+    }
+}

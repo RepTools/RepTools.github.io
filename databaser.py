@@ -15,7 +15,13 @@ def get_material_info():
     while True:
         material['Material_Name'] = input("Enter material name: ") or "undefined"
         if material['Material_Name'] in materials_db:
-            overwrite = input(f"\nMaterial '{material['Material_Name']}' already exists. Do you want to overwrite it? (y/n): ").lower()
+            # Show existing material properties
+            print("\nCurrent material properties:")
+            for key, value in materials_db[material['Material_Name']].items():
+                print(f"{key}: {value}")
+            print()  # Empty line for better readability
+            
+            overwrite = input(f"Material '{material['Material_Name']}' already exists. Do you want to overwrite it? (y/n): ").lower()
             if overwrite == 'y':
                 break
             print("Please enter a different material name.")
@@ -47,7 +53,13 @@ def main():
         
         # Check if material already exists
         if material_name in materials_db:
-            overwrite = input(f"\nMaterial '{material_name}' already exists. Do you want to overwrite it? (y/n): ").lower()
+            # Show existing material properties
+            print("\nCurrent material properties:")
+            for key, value in materials_db[material_name].items():
+                print(f"{key}: {value}")
+            print()  # Empty line for better readability
+            
+            overwrite = input(f"Material '{material_name}' already exists. Do you want to overwrite it? (y/n): ").lower()
             if overwrite != 'y':
                 print("Skipping this material.")
                 continue
